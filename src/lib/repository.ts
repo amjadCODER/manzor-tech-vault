@@ -8,13 +8,13 @@ const fallbackUsers: AppUser[] = [
   { id: '1001', name: 'أمجاد', role: 'admin' },
   { id: '1002', name: 'أمين', role: 'employee' },
   { id: '1003', name: 'عماد', role: 'employee' },
-  { id: '1004', name: 'سحاب', role: 'employee' },
-  { id: '1005', name: 'وعد', role: 'employee' },
+  { id: '1004', name: 'بشير', role: 'employee' },
+  { id: '1005', name: 'عبدالوهاب', role: 'employee'},
   { id: '1006', name: 'عهد', role: 'employee' },
-  { id: '1007', name: 'مازن', role: 'employee' },
-  { id: '1008', name: 'معتصم', role: 'employee' },
+  { id: '1007', name: 'نجود', role: 'employee' },
+  { id: '1008', name: 'منير', role: 'employee' },
   { id: '1009', name: 'طلال', role: 'employee' },
-  { id: '1010', name: 'منظور تقني', role: 'employee' }
+  { id: '1010', name: 'فاطمة', role: 'employee' }
 ];
 
 type LocalStore = {

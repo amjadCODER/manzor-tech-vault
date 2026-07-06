@@ -104,13 +104,13 @@ insert into app_users (id, display_name, role) values
 ('1001','أمجاد','admin'),
 ('1002','أمين','employee'),
 ('1003','عماد','employee'),
-('1004','سحاب','employee'),
-('1005','وعد','employee'),
+('1004','بشير','employee'),
+('1005','عبدالوهاب','employee'),
 ('1006','عهد','employee'),
-('1007','مازن','employee'),
-('1008','معتصم','employee'),
+('1007','نجود','employee'),
+('1008','منير','employee'),
 ('1009','طلال','employee'),
-('1010','منظور تقني','employee');
+('1010',' فاطمة','employee');
 
 insert into storage.buckets (id, name, public)
 values ('organization-files', 'organization-files', false)
