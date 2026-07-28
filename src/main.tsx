@@ -1,418 +1,58 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Search, Upload, Download, KeyRound, Globe2, Image as ImageIcon, MessageSquare, StickyNote, CalendarDays, Wallet, UserRound, Copy, ExternalLink, Database, Plus, FolderOpen, Info, Phone, Mail, Link2, Building2, ArrowRight, Clock, Trash2, FileSpreadsheet, ClipboardList, Target, CheckCircle2, BarChart3, UserCog } from 'lucide-react';
-import { addDailyTask, addWeeklyPlan, clearDailyTasks, clearWeeklyPlans, getAttachmentUrl, loadAccounts, loadAttachments, loadDailyTasks, loadOrganizations, loadSites, loadUsers, loadWeeklyPlans, saveAccount, saveOrganization, saveSite, uploadAttachment } from './lib/repository';
-import type { Account, AppUser, Attachment, DailyTask, Organization, SiteLink, WeeklyPlan } from './types';
+import { ArrowRight, Building2, CheckCircle2, Download, Edit3, ExternalLink, FileText, FolderOpen, Globe2, Image as ImageIcon, KeyRound, LogOut, Menu, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { deleteAccount, deleteAttachment, deleteOrganization, deleteSite, getAttachmentUrl, loadAccounts, loadAttachments, loadOrganizations, loadSites, loadUsers, saveAccount, saveOrganization, saveOrganizationsBulk, saveSite, uploadAttachment } from './lib/repository';
+import type { Account, AppUser, Attachment, Organization, SiteLink } from './types';
 import './styles.css';
 
-const fallbackUsers: AppUser[] = [
-  { id: '1001', name: 'أمجاد' },
-  { id: '1002', name: 'أمين' },
-  { id: '1003', name: 'عماد' },
-  { id: '1004', name: 'بشير' },
-  { id: '1005', name: 'عبدالوهاب' },
-  { id: '1006', name: 'عهد' },
-  { id: '1007', name: 'نجود' },
-  { id: '1008', name: 'منير' },
-  { id: '1009', name: 'طلال' },
-  { id: '1010', name: 'منظور تقني' }
-];
+const fallbackUsers: AppUser[]=[{id:'1001',name:'أمجاد',role:'admin'},{id:'1002',name:'أمين',role:'admin'},{id:'1003',name:'طلال',role:'admin'},{id:'1004',name:'عماد'},{id:'1005',name:'بشير'},{id:'1006',name:'منير'},{id:'1007',name:'عبد الوهاب'},{id:'1008',name:'عهد'},{id:'1009',name:'حساب المتدرب',role:'trainee'}];
+const categories=['شعار','هوية','عقد','حوكمة','تقرير','مراسلات','منشور','عام'];
+const emptyOrg=(id:string):Organization=>({id,name:'',financial_commitment:false,financial_amount:0,support_fund_status:'لم يبدأ',support_fund_progress:0,donors_ehsan_status:'لم يبدأ',donors_ehsan_progress:0,other_funds_status:'لم يبدأ',other_funds_progress:0});
+const norm=(v:string)=>v.toLowerCase().replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
+const pct=(v?:number|null)=>Math.max(0,Math.min(100,Number(v||0)));
+const openUrl=(u?:string|null)=>u&&window.open(u.startsWith('http')?u:`https://${u}`,'_blank');
+function errText(e:unknown){return e instanceof Error?e.message:'حدث خطأ غير معروف'}
 
-const displayCards = [
-  { key: 'data', label: 'البيانات', icon: Info },
-  { key: 'sites', label: 'المواقع', icon: Globe2 },
-  { key: 'accounts', label: 'الحسابات', icon: KeyRound },
-  { key: 'identity', label: 'الهوية', icon: ImageIcon },
-  { key: 'files', label: 'الملفات', icon: FolderOpen },
-  { key: 'messages', label: 'المراسلات', icon: MessageSquare },
-  { key: 'notes', label: 'الملاحظات', icon: StickyNote }
-];
+function Login({onLogin}:{onLogin:(u:AppUser)=>void}){const[id,setId]=React.useState('');const[users,setUsers]=React.useState(fallbackUsers);const[error,setError]=React.useState('');React.useEffect(()=>{loadUsers().then(setUsers)},[]);function submit(e:React.FormEvent){e.preventDefault();const u=users.find(x=>x.id===id.trim());if(!u)return setError('رقم الدخول غير مسجل');onLogin(u)}return <main className="loginPage"><section className="loginCard"><img src="/manzor-vault-icon.png"/><span>منظور تقني</span><h1>منظور Vault</h1><p>ادارة بيانات الجمعيات والملفات ومسارات التقديم</p><form onSubmit={submit}><input autoFocus inputMode="numeric" value={id} onChange={e=>setId(e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="رقم الدخول"/>{error&&<small>{error}</small>}<button>دخول</button></form><footer>جميع الحقوق محفوظة لمنظور التقني</footer></section></main>}
+function ProgressCard({title,status,value}:{title:string;status?:string|null;value?:number|null}){return <div className="progressCard"><div><strong>{title}</strong><span>{status||'لم يبدأ'}</span></div><b>{pct(value)}%</b><div className="progressTrack"><i style={{width:`${pct(value)}%`}}/></div></div>}
+function completion(org:Organization,accounts:Account[],sites:SiteLink[],files:Attachment[]){const checks=[org.name,org.phone,org.official_email,org.city,org.manager,org.relationship_start,org.notes,accounts.length,sites.length,files.some(f=>f.category==='شعار'),files.some(f=>f.category==='عقد')];return Math.round(checks.filter(Boolean).length/checks.length*100)}
 
-function normalize(value: string) {
-  return value.toLowerCase().replace(/[إأآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
-}
+function OrganizationView({org,accounts,sites,files,user,onEdit,onBack,onRefresh,onDeleted}:{org:Organization;accounts:Account[];sites:SiteLink[];files:Attachment[];user:AppUser;onEdit:()=>void;onBack:()=>void;onRefresh:()=>Promise<void>;onDeleted:()=>void}){
+ const[opening,setOpening]=React.useState(''); const[busy,setBusy]=React.useState(''); const c=completion(org,accounts,sites,files);
+ async function openFile(f:Attachment){try{setOpening(f.id);window.open(await getAttachmentUrl(f.file_path),'_blank')}catch(e){alert(errText(e))}finally{setOpening('')}}
+ async function remove(kind:'account'|'site'|'file',row:Account|SiteLink|Attachment){if(!confirm('متاكدة من الحذف؟'))return;try{setBusy(row.id);if(kind==='account')await deleteAccount(row as Account,user.name);if(kind==='site')await deleteSite(row as SiteLink,user.name);if(kind==='file')await deleteAttachment(row as Attachment,user.name);await onRefresh()}catch(e){alert(errText(e))}finally{setBusy('')}}
+ async function removeOrg(){if(!confirm(`حذف ${org.name} بكل روابطها وحساباتها وملفاتها؟`))return;try{setBusy('org');await deleteOrganization(org.id,user.name);onDeleted()}catch(e){alert(errText(e))}finally{setBusy('')}}
+ return <section><div className="pageActions"><button className="ghost" onClick={onBack}><ArrowRight/> رجوع للجمعيات</button><div><button className="danger" onClick={removeOrg} disabled={busy==='org'}><Trash2/> حذف الجمعية</button><button onClick={onEdit}><Edit3/> تعديل البيانات</button></div></div>
+ <div className="orgHero"><div><span>{org.id}</span><h2>{org.name}</h2><p>اخر تحديث بواسطة {org.last_updated_by||'غير محدد'}</p></div><div className="completion" style={{background:`conic-gradient(var(--primary) 0 ${c}%,#e9edf5 ${c}% 100%)`}}><b>{c}%</b><small>اكتمال بيانات الجمعية</small></div></div>
+ <div className="progressGrid"><ProgressCard title="صندوق دعم الجمعيات" status={org.support_fund_status} value={org.support_fund_progress}/><ProgressCard title="المؤسسات المانحة واحسان" status={org.donors_ehsan_status} value={org.donors_ehsan_progress}/><ProgressCard title="الصناديق الاخرى" status={org.other_funds_status} value={org.other_funds_progress}/></div>
+ <div className="detailGrid"><article><h3><Building2/> بيانات الجمعية</h3><dl><dt>الجوال</dt><dd>{org.phone||'—'}</dd><dt>البريد</dt><dd>{org.official_email||'—'}</dd><dt>المدينة</dt><dd>{org.city||'—'}</dd><dt>المدير</dt><dd>{org.manager||'—'}</dd><dt>الدومين</dt><dd>{org.domain||'—'}</dd><dt>الالتزام المالي</dt><dd>{org.financial_commitment?`${org.financial_amount||0} ريال`:'لا يوجد'}</dd></dl></article>
+ <article><h3><Globe2/> المواقع والروابط</h3>{sites.length?sites.map(s=><div className="dataRow" key={s.id}><button className="rowMain" onClick={()=>openUrl(s.url)}><span>{s.title}<small>{s.url}</small></span><ExternalLink/></button><button className="iconDanger" onClick={()=>remove('site',s)} disabled={busy===s.id}><Trash2/></button></div>):<p className="empty">لا توجد روابط</p>}</article>
+ <article><h3><KeyRound/> الحسابات</h3>{accounts.length?accounts.map(a=><div className="account" key={a.id}><strong>{a.provider}</strong><span>{a.username||'—'}</span><code>{a.password||'—'}</code>{a.url&&<button onClick={()=>openUrl(a.url)}>فتح</button>}<button className="iconDanger" onClick={()=>remove('account',a)} disabled={busy===a.id}><Trash2/></button></div>):<p className="empty">لا توجد حسابات</p>}</article>
+ <article className="wide"><h3><FolderOpen/> المرفقات</h3><div className="fileGrid">{files.length?files.map(f=><div className="fileItem" key={f.id}><button className="fileOpen" onClick={()=>openFile(f)}><FileText/><span>{f.title}<small>{f.category}</small></span><b>{opening===f.id?'جاري الفتح':'تحميل'}</b></button><button className="iconDanger" onClick={()=>remove('file',f)} disabled={busy===f.id}><Trash2/></button></div>):<p className="empty">لا توجد مرفقات</p>}</div></article>
+ <article className="wide"><h3>الملاحظات</h3><p className="notes">{org.notes||'لا توجد ملاحظات'}</p></article></div></section>}
 
-function copy(value?: string | null) {
-  if (value) navigator.clipboard.writeText(value);
-}
+type DraftFile={file:File;category:string};
+function EntryPage({initial,currentUser,onCancel,onDone}:{initial:Organization;currentUser:AppUser;onCancel:()=>void;onDone:(o:Organization)=>void}){
+ const[form,setForm]=React.useState<Organization>({...initial});const[sites,setSites]=React.useState<SiteLink[]>([]);const[accounts,setAccounts]=React.useState<Account[]>([]);const[files,setFiles]=React.useState<DraftFile[]>([]);const[site,setSite]=React.useState({title:'',url:'',note:''});const[account,setAccount]=React.useState({provider:'',username:'',password:'',url:''});const[category,setCategory]=React.useState('عام');const[saving,setSaving]=React.useState(false);const[done,setDone]=React.useState(false);const[loading,setLoading]=React.useState(Boolean(initial.name));
+ React.useEffect(()=>{if(!initial.name){setLoading(false);return}Promise.all([loadSites(initial.id),loadAccounts(initial.id)]).then(([s,a])=>{setSites(s);setAccounts(a)}).catch(e=>alert(errText(e))).finally(()=>setLoading(false))},[initial.id,initial.name]);
+ const set=(k:keyof Organization,v:any)=>setForm(p=>({...p,[k]:v}));
+ async function saveAll(){if(!form.name.trim())return alert('اكتبي اسم الجمعية');setSaving(true);try{const saved=await saveOrganization(form,currentUser.name);for(const s of sites)await saveSite({...s,organization_id:form.id},currentUser.name);for(const a of accounts)await saveAccount({...a,organization_id:form.id},currentUser.name);for(const f of files)await uploadAttachment(form.id,f.file,f.category,currentUser.name);setDone(true);setTimeout(()=>onDone(saved),650)}catch(e){alert(errText(e))}finally{setSaving(false)}}
+ function addSite(){if(!site.title||!site.url)return;setSites(p=>[...p,{id:crypto.randomUUID(),organization_id:form.id,...site}]);setSite({title:'',url:'',note:''})}
+ function addAccount(){if(!account.provider)return;setAccounts(p=>[...p,{id:crypto.randomUUID(),organization_id:form.id,...account}]);setAccount({provider:'',username:'',password:'',url:''})}
+ if(loading)return <div className="welcome"><p>جاري تحميل بيانات الجمعية...</p></div>;
+ return <section>{done&&<div className="successToast"><CheckCircle2/> تم تحديث بيانات الجمعية بنجاح</div>}<div className="pageActions"><button className="ghost" onClick={onCancel}><ArrowRight/> رجوع</button><button onClick={saveAll} disabled={saving}><Save/> {saving?'جاري الحفظ':'حفظ كل البيانات'}</button></div><div className="entryTitle"><div><span>{form.id}</span><h2>{initial.name?'تحديث الجمعية':'اضافة جمعية جديدة'}</h2></div><p>كل البيانات والمرفقات تحفظ في Supabase بعد الضغط على حفظ</p></div>
+ <div className="formSections"><article><h3>البيانات الاساسية</h3><div className="fields"><label>اسم الجمعية<input value={form.name||''} onChange={e=>set('name',e.target.value)}/></label><label>رقم التواصل<input value={form.phone||''} onChange={e=>set('phone',e.target.value)}/></label><label>البريد الرسمي<input value={form.official_email||''} onChange={e=>set('official_email',e.target.value)}/></label><label>المدينة<input value={form.city||''} onChange={e=>set('city',e.target.value)}/></label><label>اسم المدير<input value={form.manager||''} onChange={e=>set('manager',e.target.value)}/></label><label>الدومين<input value={form.domain||''} onChange={e=>set('domain',e.target.value)}/></label><label>تاريخ بداية العلاقة<input type="date" value={form.relationship_start||''} onChange={e=>set('relationship_start',e.target.value)}/></label><label>الالتزام المالي<select value={form.financial_commitment?'yes':'no'} onChange={e=>set('financial_commitment',e.target.value==='yes')}><option value="no">لا يوجد</option><option value="yes">يوجد</option></select></label><label>قيمة الالتزام<input type="number" value={form.financial_amount||''} onChange={e=>set('financial_amount',Number(e.target.value))}/></label></div><label>ملاحظات مالية<textarea value={form.financial_note||''} onChange={e=>set('financial_note',e.target.value)}/></label><label>ملاحظات عامة<textarea value={form.notes||''} onChange={e=>set('notes',e.target.value)}/></label></article>
+ <article><h3>مسارات التقدم</h3>{[['support_fund','صندوق دعم الجمعيات'],['donors_ehsan','المؤسسات المانحة واحسان'],['other_funds','الصناديق الاخرى']].map(([k,t])=><div className="trackFields" key={k}><strong>{t}</strong><select value={(form as any)[`${k}_status`]||'لم يبدأ'} onChange={e=>set(`${k}_status` as keyof Organization,e.target.value)}><option>لم يبدأ</option><option>جاري التجهيز</option><option>تم الرفع</option><option>بانتظار الرد</option><option>مقبول</option><option>مرفوض</option></select><input type="range" min="0" max="100" value={(form as any)[`${k}_progress`]||0} onChange={e=>set(`${k}_progress` as keyof Organization,Number(e.target.value))}/><b>{(form as any)[`${k}_progress`]||0}%</b></div>)}</article>
+ <article><h3>الروابط</h3><div className="inlineFields"><input placeholder="اسم الرابط" value={site.title} onChange={e=>setSite({...site,title:e.target.value})}/><input placeholder="الرابط" value={site.url} onChange={e=>setSite({...site,url:e.target.value})}/><button onClick={addSite}><Plus/></button></div>{sites.map((s,i)=><div className="editableRow" key={s.id}><input value={s.title} onChange={e=>setSites(p=>p.map((x,n)=>n===i?{...x,title:e.target.value}:x))}/><input value={s.url} onChange={e=>setSites(p=>p.map((x,n)=>n===i?{...x,url:e.target.value}:x))}/><button onClick={()=>setSites(p=>p.filter((_,n)=>n!==i))}><X/></button></div>)}</article>
+ <article><h3>الحسابات</h3><div className="fields"><input placeholder="اسم النظام او المؤسسة" value={account.provider} onChange={e=>setAccount({...account,provider:e.target.value})}/><input placeholder="اليوزر" value={account.username} onChange={e=>setAccount({...account,username:e.target.value})}/><input placeholder="الباسورد" value={account.password} onChange={e=>setAccount({...account,password:e.target.value})}/><input placeholder="رابط الدخول" value={account.url} onChange={e=>setAccount({...account,url:e.target.value})}/></div><button className="subButton" onClick={addAccount}><Plus/> اضافة الحساب للقائمة</button>{accounts.map((a,i)=><div className="editableAccount" key={a.id}><input value={a.provider} onChange={e=>setAccounts(p=>p.map((x,n)=>n===i?{...x,provider:e.target.value}:x))}/><input value={a.username||''} onChange={e=>setAccounts(p=>p.map((x,n)=>n===i?{...x,username:e.target.value}:x))}/><input value={a.password||''} onChange={e=>setAccounts(p=>p.map((x,n)=>n===i?{...x,password:e.target.value}:x))}/><input value={a.url||''} onChange={e=>setAccounts(p=>p.map((x,n)=>n===i?{...x,url:e.target.value}:x))}/><button onClick={()=>setAccounts(p=>p.filter((_,n)=>n!==i))}><X/></button></div>)}</article>
+ <article className="wide"><h3>المرفقات</h3><div className="uploadRow"><select value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(c=><option key={c}>{c}</option>)}</select><label className="upload"><Upload/> اختيار ملفات<input hidden multiple type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={e=>{const chosen=Array.from(e.target.files||[]).map(file=>({file:file as File,category}));setFiles(p=>[...p,...chosen]);e.target.value=''}}/></label></div><div className="pendingFiles">{files.map((f,i)=><div key={`${f.file.name}-${i}`}><FileText/><span>{f.file.name}<small>{f.category}</small></span><button onClick={()=>setFiles(p=>p.filter((_,n)=>n!==i))}><X/></button></div>)}</div></article></div></section>}
 
-function openUrl(url?: string | null) {
-  if (!url) return;
-  window.open(url.startsWith('http') ? url : `https://${url}`, '_blank');
-}
+function makeTemplate(){const headers=['رقم الجمعية','اسم الجمعية','البريد الرسمي','رقم التواصل','المدينة','اسم المدير','الدومين','تاريخ بداية العلاقة','التزام مالي نعم او لا','قيمة الالتزام','ملاحظات','رابط الشعار','روابط العقود PDF مفصولة بعلامة |','حالة صندوق الدعم','نسبة صندوق الدعم','حالة المؤسسات المانحة واحسان','نسبة المؤسسات المانحة واحسان','حالة الصناديق الاخرى','نسبة الصناديق الاخرى'];const sample=['ORG-001','جمعية مثال','info@example.org','0500000000','الرياض','اسم المدير','example.org','2026-01-01','لا','0','','','','لم يبدأ','0','لم يبدأ','0','لم يبدأ','0'];const esc=(v:string)=>v.replace(/&/g,'&amp;').replace(/</g,'&lt;');const rows=[headers,sample].map(r=>`<Row>${r.map(v=>`<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('')}</Row>`).join('');const xml=`<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="الجمعيات"><Table>${rows}</Table></Worksheet></Workbook>`;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([xml],{type:'application/vnd.ms-excel'}));a.download='نموذج-استيراد-الجمعيات.xls';a.click();URL.revokeObjectURL(a.href)}
+async function parseImport(file:File):Promise<Organization[]>{const text=await file.text();const doc=new DOMParser().parseFromString(text,'text/xml');const rows=Array.from(doc.getElementsByTagName('Row')).slice(1);return rows.map((r,i)=>{const c=Array.from(r.getElementsByTagName('Data')).map(x=>x.textContent||'');return{id:c[0]||`ORG-${Date.now()}-${i}`,name:c[1]||'',official_email:c[2],phone:c[3],city:c[4],manager:c[5],domain:c[6],relationship_start:c[7]||null,financial_commitment:norm(c[8]||'')==='نعم',financial_amount:Number(c[9]||0),notes:c[10],support_fund_status:c[13]||'لم يبدأ',support_fund_progress:Number(c[14]||0),donors_ehsan_status:c[15]||'لم يبدأ',donors_ehsan_progress:Number(c[16]||0),other_funds_status:c[17]||'لم يبدأ',other_funds_progress:Number(c[18]||0)}}).filter(x=>x.name)}
 
-function formatDate(value?: string | null) {
-  if (!value) return 'غير محدد';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'غير محدد';
-  return date.toLocaleDateString('ar-SA');
-}
-
-function relationshipText(value?: string | null) {
-  if (!value) return 'غير محدد';
-  const start = new Date(value);
-  if (Number.isNaN(start.getTime())) return 'غير محدد';
-  const now = new Date();
-  let months = (now.getFullYear() - start.getFullYear()) * 12 + now.getMonth() - start.getMonth();
-  if (now.getDate() < start.getDate()) months -= 1;
-  if (months >= 12) {
-    const years = Math.floor(months / 12);
-    const rest = months % 12;
-    return rest ? `${years} سنة و ${rest} شهر` : `${years} سنة`;
-  }
-  if (months > 0) return `${months} شهر`;
-  const days = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / 86400000));
-  return `${days} يوم`;
-}
-
-function Login({ onLogin }: { onLogin: (user: AppUser) => void }) {
-  const [employeeId, setEmployeeId] = React.useState('');
-  const [error, setError] = React.useState('');
-  const [users, setUsers] = React.useState<AppUser[]>(fallbackUsers);
-  const [loading, setLoading] = React.useState(false);
-
-  React.useEffect(() => {
-    loadUsers().then(setUsers).catch(() => setUsers(fallbackUsers));
-  }, []);
-
-  async function submit(event?: React.FormEvent) {
-    event?.preventDefault();
-    setLoading(true);
-    const freshUsers = await loadUsers().catch(() => users);
-    const user = freshUsers.find(item => item.id === employeeId.trim());
-    setLoading(false);
-    if (!user) {
-      setError('رقم الايدي غير مسجل');
-      return;
-    }
-    setError('');
-    onLogin(user);
-  }
-
-  return <main className="loginPage">
-    <section className="loginCard">
-      <div className="brandMark"><img src="/manzor-vault-icon.png" alt="منظور تقني" /></div>
-      <span className="appBadge">منظور تقني</span>
-      <h1>منظور Vault</h1>
-      <p>مركز بيانات الجمعيات والحسابات والملفات الداخلية</p>
-      <form className="loginFields" onSubmit={submit}>
-        <input inputMode="numeric" value={employeeId} onChange={e => setEmployeeId(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="ادخل رقم الايدي" autoFocus />
-        {error && <span className="loginError">{error}</span>}
-        <button className="primaryButton" type="submit" disabled={loading}>{loading ? 'جاري الدخول...' : 'دخول'}</button>
-      </form>
-      <div className="idHint">IDs: 1001 - 1010</div>
-      <footer>نشر بواسطة منظور تقني | manzor tech</footer>
-    </section>
-  </main>;
-}
-
-function SmallMetric({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
-  return <div className="smallMetric"><Icon size={18}/><span>{label}</span><strong>{value}</strong></div>;
-}
-
-function Overview({ org, accounts, sites, files, onOpenEntry, onOpenPanel }: { org: Organization; accounts: Account[]; sites: SiteLink[]; files: Attachment[]; onOpenEntry: () => void; onOpenPanel: (panel: string) => void }) {
-  const identity = files.filter(file => ['شعار','هوية','منشور'].includes(file.category));
-  const count = (key: string) => key === 'accounts' ? accounts.length : key === 'sites' ? sites.length : key === 'identity' ? identity.length : key === 'files' ? files.length : undefined;
-  return <section className="overview">
-    <div className="overviewHero">
-      <div>
-        <span className="orgCode">{org.id}</span>
-        <h2>{org.name}</h2>
-        <p>الجمعية مشتركة منذ {relationshipText(org.relationship_start)}</p>
-      </div>
-      <button className="entryButton" onClick={onOpenEntry}><Database size={18}/> فتح لوحة الإدخال</button>
-    </div>
-    <div className="metricsGrid">
-      <SmallMetric icon={CalendarDays} label="بداية الاشتراك" value={formatDate(org.relationship_start)} />
-      <SmallMetric icon={Wallet} label="التزامات مالية" value={org.financial_commitment ? `${org.financial_amount || 0} ريال` : 'لا يوجد'} />
-      <SmallMetric icon={UserRound} label="آخر إدخال بواسطة" value={org.last_updated_by || '—'} />
-    </div>
-    <div className="cardsGrid">
-      {displayCards.map(card => {
-        const Icon = card.icon;
-        const total = count(card.key);
-        return <button key={card.key} onClick={() => onOpenPanel(card.key)}><Icon/><strong>{card.label}</strong>{total !== undefined && <span>{total}</span>}</button>;
-      })}
-    </div>
-  </section>;
-}
-
-function DisplayPanel({ panel, org, accounts, sites, files }: { panel: string; org: Organization; accounts: Account[]; sites: SiteLink[]; files: Attachment[] }) {
-  if (panel === 'data') return <Panel title="بيانات الجمعية">
-    <div className="infoGrid">
-      <InfoRow icon={Building2} label="اسم الجمعية" value={org.name} />
-      <InfoRow icon={CalendarDays} label="الجمعية مشتركة منذ" value={relationshipText(org.relationship_start)} />
-      <InfoRow icon={Phone} label="رقم التواصل" value={org.phone || org.channel || '—'} copyable />
-      <InfoRow icon={Mail} label="الإيميل الرسمي" value={org.official_email || '—'} copyable />
-      <InfoRow icon={Link2} label="الدومين" value={org.domain || org.system_url || '—'} copyable openable />
-      <InfoRow icon={Wallet} label="الالتزامات المالية" value={org.financial_commitment ? `${org.financial_amount || 0} ريال - ${org.financial_note || 'بدون وصف'}` : 'لا يوجد'} />
-      <InfoRow icon={CalendarDays} label="آخر تحديث" value={formatDate(org.last_update)} />
-      <InfoRow icon={UserRound} label="آخر يوزر قام بالإدخال" value={org.last_updated_by || '—'} />
-    </div>
-  </Panel>;
-
-  if (panel === 'sites') return <Panel title="روابط الجمعية">
-    {sites.length ? sites.map(site => <ActionRow key={site.id} title={site.title} subtitle={site.url} onCopy={() => copy(site.url)} onOpen={() => openUrl(site.url)} />) : <Empty/>}
-  </Panel>;
-
-  if (panel === 'accounts') return <Panel title="حسابات الجمعية">
-    {accounts.length ? <div className="accountsGrid">{accounts.map(account => <div className="accountCard" key={account.id}>
-      <h4>{account.provider}</h4>
-      {account.url && <button className="linkButton" onClick={() => openUrl(account.url)}><ExternalLink size={15}/> فتح الرابط</button>}
-      <CopyLine label="اليوزر" value={account.username || '—'} />
-      <CopyLine label="الباسورد" value={account.password || '—'} />
-    </div>)}</div> : <Empty/>}
-  </Panel>;
-
-  if (panel === 'identity') return <FilePanel title="هوية الجمعية" files={files.filter(file => ['شعار','هوية','منشور'].includes(file.category))} preview />;
-  if (panel === 'files') return <FilePanel title="ملفات الجمعية" files={files} />;
-  if (panel === 'messages') return <Panel title="المراسلات والنصوص"><div className="messageBox">السلام عليكم، معكم فريق منظور تقني بخصوص تحديث بيانات {org.name}.<button onClick={() => copy(`السلام عليكم، معكم فريق منظور تقني بخصوص تحديث بيانات ${org.name}.`)}>نسخ النص</button></div></Panel>;
-  return <Panel title="الملاحظات"><div className="notesBox">{org.notes || 'لا توجد ملاحظات مسجلة.'}</div></Panel>;
-}
-
-function InfoRow({ icon: Icon, label, value, copyable, openable }: { icon: any; label: string; value: string; copyable?: boolean; openable?: boolean }) {
-  return <div className="infoRow"><Icon size={18}/><div><span>{label}</span><strong>{value}</strong></div><div className="rowActions">{copyable && value !== '—' && <button onClick={() => copy(value)}><Copy size={15}/> نسخ</button>}{openable && value !== '—' && <button onClick={() => openUrl(value)}><ExternalLink size={15}/> فتح</button>}</div></div>;
-}
-
-function CopyLine({ label, value }: { label: string; value: string }) {
-  return <div className="copyLine"><span>{label}</span><code>{value}</code><button onClick={() => copy(value)}><Copy size={15}/> نسخ</button></div>;
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="panel"><h3>{title}</h3>{children}</section>;
-}
-
-function Empty() {
-  return <div className="empty">لا توجد بيانات مسجلة لهذا القسم.</div>;
-}
-
-function ActionRow({ title, subtitle, onCopy, onOpen }: { title: string; subtitle: string; onCopy: () => void; onOpen: () => void }) {
-  return <div className="actionRow"><div><strong>{title}</strong><span>{subtitle}</span></div><button onClick={onCopy}><Copy size={15}/> نسخ</button><button onClick={onOpen}><ExternalLink size={15}/> فتح</button></div>;
-}
-
-function FilePanel({ title, files, preview }: { title: string; files: Attachment[]; preview?: boolean }) {
-  const [urls, setUrls] = React.useState<Record<string, string>>({});
-  React.useEffect(() => {
-    if (!preview) return;
-    files.forEach(file => getAttachmentUrl(file.file_path).then(url => setUrls(prev => ({ ...prev, [file.id]: url }))));
-  }, [files, preview]);
-  async function openFile(path: string) {
-    const url = await getAttachmentUrl(path);
-    if (url) window.open(url, '_blank');
-  }
-  return <Panel title={title}>{files.length ? <div className={preview ? 'identityGrid' : 'filesGrid'}>{files.map(file => <button className="fileCard" key={file.id} onClick={() => openFile(file.file_path)}>{preview && urls[file.id] ? <img src={urls[file.id]} alt={file.title}/> : <Download/>}<strong>{file.title}</strong><small>{file.category} • {file.uploaded_by || '—'}</small></button>)}</div> : <Empty/>}</Panel>;
-}
-
-
-
-
-
-function downloadExcel(filename: string, title: string, headers: string[], rows: (string | number)[][]) {
-  const escape = (value: string | number) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  const table = `
-    <html dir="rtl">
-      <head><meta charset="utf-8" /></head>
-      <body>
-        <h2>${escape(title)}</h2>
-        <table border="1">
-          <thead><tr>${headers.map(item => `<th>${escape(item)}</th>`).join('')}</tr></thead>
-          <tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table>
-      </body>
-    </html>`;
-  const blob = new Blob([table], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename.endsWith('.xls') ? filename : `${filename}.xls`;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-function todayISO() {
-  const date = new Date();
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
-}
-
-function currentTime() {
-  return new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-}
-
-function monthKey() {
-  return todayISO().slice(0, 7);
-}
-
-function toLocalDate(value?: string | null) {
-  if (!value) return todayISO();
-  return String(value).slice(0, 10);
-}
-
-function toLocalTime(value?: string | null) {
-  if (!value) return currentTime();
-  return String(value).slice(0, 5);
-}
-
-function UserProfileDashboard({ currentUser }: { currentUser: AppUser }) {
-  const [daily, setDaily] = React.useState<DailyTask[]>([]);
-  const [weekly, setWeekly] = React.useState<WeeklyPlan[]>([]);
-  const [task, setTask] = React.useState('');
-  const [plan, setPlan] = React.useState('');
-  const [outputName, setOutputName] = React.useState('');
-  const [outputCount, setOutputCount] = React.useState('');
-  const [beneficiary, setBeneficiary] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-
-  const reloadProfile = React.useCallback(async () => {
-    const [dailyRows, weeklyRows] = await Promise.all([
-      loadDailyTasks(currentUser.id),
-      loadWeeklyPlans(currentUser.id)
-    ]);
-    setDaily(dailyRows);
-    setWeekly(weeklyRows);
-  }, [currentUser.id]);
-
-  React.useEffect(() => {
-    reloadProfile();
-  }, [reloadProfile]);
-
-  const thisMonth = monthKey();
-  const dailyThisMonth = daily.filter(item => toLocalDate(item.task_date).startsWith(thisMonth));
-  const weeklyThisMonth = weekly.filter(item => toLocalDate(item.plan_date).startsWith(thisMonth));
-
-  async function addDaily() {
-    const value = task.trim();
-    if (!value || busy) return;
-    setBusy(true);
-    const row = await addDailyTask(currentUser.id, value);
-    setDaily(prev => [row, ...prev.filter(item => item.id !== row.id)]);
-    setTask('');
-    setBusy(false);
-  }
-
-  async function addWeekly() {
-    const value = plan.trim();
-    if (!value || busy) return;
-    setBusy(true);
-    const row = await addWeeklyPlan({
-      userId: currentUser.id,
-      planText: value,
-      outputName: outputName.trim(),
-      outputCount: Number(outputCount || 1),
-      beneficiary: beneficiary.trim()
-    });
-    setWeekly(prev => [row, ...prev.filter(item => item.id !== row.id)]);
-    setPlan('');
-    setOutputName('');
-    setOutputCount('');
-    setBeneficiary('');
-    setBusy(false);
-  }
-
-  async function deleteDaily() {
-    if (!confirm('تبين حذف كل بيانات الإنجاز اليومي لهذا المستخدم؟')) return;
-    await clearDailyTasks(currentUser.id);
-    setDaily([]);
-  }
-
-  async function deleteWeekly() {
-    if (!confirm('تبين حذف كل بيانات الخطة الأسبوعية لهذا المستخدم؟')) return;
-    await clearWeeklyPlans(currentUser.id);
-    setWeekly([]);
-  }
-
-  function exportDaily() {
-    downloadExcel(
-      `daily-${currentUser.id}-${thisMonth}.xls`,
-      `الإنجاز اليومي - ${currentUser.name} - ${thisMonth}`,
-      ['#', 'التاريخ', 'الوقت', 'المهمة المنجزة'],
-      dailyThisMonth.map((item, index) => [index + 1, toLocalDate(item.task_date), toLocalTime(item.task_time), item.task_text])
-    );
-  }
-
-  function exportWeekly() {
-    downloadExcel(
-      `weekly-${currentUser.id}-${thisMonth}.xls`,
-      `الخطة الأسبوعية - ${currentUser.name} - ${thisMonth}`,
-      ['#', 'تاريخ الإدخال', 'الخطة القادمة', 'اسم المخرج', 'عدد المخرجات', 'لصالح مين'],
-      weeklyThisMonth.map((item, index) => [index + 1, toLocalDate(item.plan_date), item.plan_text, item.output_name || '—', item.output_count || '—', item.beneficiary || '—'])
-    );
-  }
-
-  return <section className="profileDashboard">
-    <div className="profileHero">
-      <div><span>بروفايل المستخدم</span><h2>{currentUser.name}</h2><p>ID: {currentUser.id}</p></div>
-      <div className="profileStats"><SmallMetric icon={CheckCircle2} label="إنجازات الشهر" value={String(dailyThisMonth.length)} /><SmallMetric icon={Target} label="خطط الشهر" value={String(weeklyThisMonth.length)} /></div>
-    </div>
-    <div className="profileGrid">
-      <div className="profileCard">
-        <div className="profileCardHead"><div><Clock size={20}/><h3>الإنجاز اليومي</h3></div><button onClick={exportDaily}><FileSpreadsheet size={16}/> تصدير Excel</button></div>
-        <p>التاريخ والوقت ينسجلون تلقائيا من جهازك عند إضافة المهمة.</p>
-        <textarea value={task} onChange={e => setTask(e.target.value)} placeholder="اكتب المهمة اللي خلصتها اليوم" />
-        <button onClick={addDaily} disabled={busy}><Plus size={16}/> تسجيل الإنجاز</button>
-        <div className="miniTable">{daily.slice(0, 8).map(item => <div key={item.id}><strong>{item.task_number}</strong><span>{toLocalDate(item.task_date)}</span><span>{toLocalTime(item.task_time)}</span><p>{item.task_text}</p></div>)}</div>
-        <button className="dangerButton" onClick={deleteDaily}><Trash2 size={16}/> حذف بيانات الإنجاز اليومي</button>
-      </div>
-      <div className="profileCard">
-        <div className="profileCardHead"><div><ClipboardList size={20}/><h3>خطة الأسبوع</h3></div><button onClick={exportWeekly}><FileSpreadsheet size={16}/> تصدير Excel</button></div>
-        <p>اكتبيها بصيغة شيء راح يصير مع اسم المخرج وعدده والجهة المستفيدة.</p>
-        <textarea value={plan} onChange={e => setPlan(e.target.value)} placeholder="الخطة الأسبوعية القادمة" />
-        <div className="threeInputs"><input value={outputName} onChange={e => setOutputName(e.target.value)} placeholder="اسم المخرج"/><input inputMode="numeric" value={outputCount} onChange={e => setOutputCount(e.target.value.replace(/\D/g, ''))} placeholder="عدد المخرجات"/><input value={beneficiary} onChange={e => setBeneficiary(e.target.value)} placeholder="لصالح مين"/></div>
-        <button onClick={addWeekly} disabled={busy}><Plus size={16}/> تسجيل الخطة</button>
-        <div className="miniTable">{weekly.slice(0, 8).map((item, index) => <div key={item.id}><strong>{index + 1}</strong><span>{toLocalDate(item.plan_date)}</span><span>{item.output_name || '—'} × {item.output_count || '—'}</span><p>{item.plan_text}<br/><small>لصالح: {item.beneficiary || '—'}</small></p></div>)}</div>
-        <button className="dangerButton" onClick={deleteWeekly}><Trash2 size={16}/> حذف بيانات الخطة الأسبوعية</button>
-      </div>
-    </div>
-  </section>;
-}
-
-function EntryDashboard({ org, currentUser, onSaved, onBack, reload }: { org: Organization; currentUser: AppUser; onSaved: (org: Organization) => void; onBack: () => void; reload: () => void }) {
-  const [form, setForm] = React.useState<Organization>(org);
-  const [site, setSite] = React.useState({ title: '', url: '', note: '' });
-  const [account, setAccount] = React.useState({ provider: '', username: '', password: '', url: '' });
-  const [category, setCategory] = React.useState('عام');
-  React.useEffect(() => setForm(org), [org]);
-  const set = (key: keyof Organization, value: any) => setForm(prev => ({ ...prev, [key]: value }));
-  async function submitOrg() { onSaved(await saveOrganization(form, currentUser.name)); }
-  async function submitSite() { if (!site.title || !site.url) return; await saveSite({ organization_id: org.id, ...site }, currentUser.name); setSite({ title: '', url: '', note: '' }); reload(); }
-  async function submitAccount() { if (!account.provider) return; await saveAccount({ organization_id: org.id, ...account }, currentUser.name); setAccount({ provider: '', username: '', password: '', url: '' }); reload(); }
-  async function handleFile(event: React.ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (!file) return; await uploadAttachment(org.id, file, category, currentUser.name); event.target.value = ''; reload(); }
-  return <section className="entry">
-    <div className="entryHead"><div><span>{org.id}</span><h2>لوحة إدخال {org.name}</h2></div><button onClick={onBack}><ArrowRight size={16}/> رجوع للعرض</button></div>
-    <div className="entryGrid">
-      <div className="formCard wide"><h3>بيانات الجمعية</h3><input value={form.name || ''} onChange={e => set('name', e.target.value)} placeholder="اسم الجمعية"/><input value={form.phone || ''} onChange={e => set('phone', e.target.value)} placeholder="رقم التواصل"/><input value={form.official_email || ''} onChange={e => set('official_email', e.target.value)} placeholder="الإيميل الرسمي"/><input value={form.domain || ''} onChange={e => set('domain', e.target.value)} placeholder="الدومين إن وجد"/><label>تاريخ بداية الجمعية مع منظور</label><input type="date" value={form.relationship_start || ''} onChange={e => set('relationship_start', e.target.value)}/><select value={form.financial_commitment ? 'yes' : 'no'} onChange={e => set('financial_commitment', e.target.value === 'yes')}><option value="no">لا يوجد التزام مالي</option><option value="yes">يوجد التزام مالي</option></select><input type="number" value={form.financial_amount || ''} onChange={e => set('financial_amount', Number(e.target.value))} placeholder="قيمة الالتزام"/><textarea value={form.financial_note || ''} onChange={e => set('financial_note', e.target.value)} placeholder="وصف الالتزام أو الملاحظات المالية"/><textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="ملاحظات داخلية"/><button onClick={submitOrg}><Database size={16}/> حفظ بيانات الجمعية</button></div>
-      <div className="formCard"><h3>إضافة رابط</h3><input value={site.title} onChange={e => setSite({ ...site, title: e.target.value })} placeholder="اسم الرابط: الموقع / النظام / المتجر"/><input value={site.url} onChange={e => setSite({ ...site, url: e.target.value })} placeholder="الرابط"/><input value={site.note} onChange={e => setSite({ ...site, note: e.target.value })} placeholder="ملاحظة اختيارية"/><button onClick={submitSite}><Plus size={16}/> إضافة الرابط</button></div>
-      <div className="formCard"><h3>إضافة حساب مؤسسة</h3><input value={account.provider} onChange={e => setAccount({ ...account, provider: e.target.value })} placeholder="اسم المؤسسة أو النظام"/><input value={account.username} onChange={e => setAccount({ ...account, username: e.target.value })} placeholder="اليوزر"/><input value={account.password} onChange={e => setAccount({ ...account, password: e.target.value })} placeholder="الباسورد"/><input value={account.url} onChange={e => setAccount({ ...account, url: e.target.value })} placeholder="رابط الدخول اختياري"/><button onClick={submitAccount}><Plus size={16}/> إضافة الحساب</button></div>
-      <div className="formCard"><h3>رفع ملف أو شعار</h3><select value={category} onChange={e => setCategory(e.target.value)}><option>عام</option><option>شعار</option><option>هوية</option><option>عقد</option><option>حوكمة</option><option>منشور</option><option>مراسلات</option></select><label className="uploadButton"><Upload size={18}/> اختيار ورفع الملف<input type="file" onChange={handleFile} hidden /></label></div>
-    </div>
-  </section>;
-}
-
-function App() {
-  const [user, setUser] = React.useState<AppUser | null>(null);
-  const [items, setItems] = React.useState<Organization[]>([]);
-  const [selected, setSelected] = React.useState<Organization | null>(null);
-  const [query, setQuery] = React.useState('');
-  const [mode, setMode] = React.useState<'view' | 'entry'>('view');
-  const [panel, setPanel] = React.useState('');
-  const [section, setSection] = React.useState<'organizations' | 'profile'>('organizations');
-  const [accounts, setAccounts] = React.useState<Account[]>([]);
-  const [sites, setSites] = React.useState<SiteLink[]>([]);
-  const [files, setFiles] = React.useState<Attachment[]>([]);
-  const refreshRelated = React.useCallback(() => { if (!selected) return; loadAccounts(selected.id).then(setAccounts); loadSites(selected.id).then(setSites); loadAttachments(selected.id).then(setFiles); }, [selected]);
-  React.useEffect(() => { if (user) loadOrganizations().then(data => { setItems(data); setSelected(data[0] || null); }); }, [user]);
-  React.useEffect(() => { refreshRelated(); setPanel(''); }, [selected, refreshRelated]);
-  if (!user) return <Login onLogin={setUser}/>;
-  const filtered = items.filter(item => normalize([item.id, item.name, item.system_url, item.official_email, item.phone, item.manager, item.domain].join(' ')).includes(normalize(query)));
-  return <main className="appShell">
-    <header className="topbar"><img src="/manzor-vault-icon.png" alt="Manzor Tech"/><div><h1>منظور Vault</h1><p>منظور تقني لإدارة بيانات الجمعيات</p></div><button className={section === 'profile' ? 'topAction active' : 'topAction'} onClick={() => setSection(section === 'profile' ? 'organizations' : 'profile')}><UserCog size={17}/> {section === 'profile' ? 'الرجوع للجمعيات' : 'بروفايلي وخططي'}</button><strong>{user.name}</strong></header>
-    <section className="layout">
-      <aside className="sidebar"><div className="search"><Search size={18}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="ابحث باسم الجمعية أو ID أو البريد" /></div><div className="list">{filtered.map(item => <button className={selected?.id===item.id?'selected':''} key={item.id} onClick={() => { setSelected(item); setMode('view'); setPanel(''); }}><span>{item.id}</span><strong>{item.name}</strong></button>)}</div></aside>
-      <section className="workspace">{section === 'profile' ? <UserProfileDashboard currentUser={user}/> : selected && (mode === 'entry' ? <EntryDashboard org={selected} currentUser={user} reload={refreshRelated} onBack={() => setMode('view')} onSaved={(org) => { setItems(prev => prev.map(item => item.id === org.id ? org : item)); setSelected(org); }} /> : panel ? <><button className="backButton" onClick={() => setPanel('')}><ArrowRight size={16}/> رجوع للوحة</button><DisplayPanel panel={panel} org={selected} accounts={accounts} sites={sites} files={files}/></> : <Overview org={selected} accounts={accounts} sites={sites} files={files} onOpenEntry={() => setMode('entry')} onOpenPanel={setPanel}/>)}</section>
-    </section>
-  </main>;
-}
-
-createRoot(document.getElementById('root')!).render(<App />);
+function App(){const[user,setUser]=React.useState<AppUser|null>(null);const[orgs,setOrgs]=React.useState<Organization[]>([]);const[selected,setSelected]=React.useState<Organization|null>(null);const[mode,setMode]=React.useState<'list'|'view'|'entry'>('list');const[query,setQuery]=React.useState('');const[accounts,setAccounts]=React.useState<Account[]>([]);const[sites,setSites]=React.useState<SiteLink[]>([]);const[files,setFiles]=React.useState<Attachment[]>([]);const[menu,setMenu]=React.useState(false);const[error,setError]=React.useState('');
+ const reload=React.useCallback(async()=>{try{setError('');setOrgs(await loadOrganizations())}catch(e){setError(errText(e))}},[]);const refreshDetails=React.useCallback(async()=>{if(!selected)return;const[a,s,f]=await Promise.all([loadAccounts(selected.id),loadSites(selected.id),loadAttachments(selected.id)]);setAccounts(a);setSites(s);setFiles(f)},[selected]);React.useEffect(()=>{if(user)reload()},[user,reload]);React.useEffect(()=>{if(selected)refreshDetails().catch(e=>setError(errText(e)))},[selected,refreshDetails]);if(!user)return <Login onLogin={setUser}/>;
+ const filtered=orgs.filter(o=>norm([o.id,o.name,o.official_email,o.phone].join(' ')).includes(norm(query)));const nextId=()=>`ORG-${String(Math.max(0,...orgs.map(o=>Number((o.id.match(/\d+/)||['0'])[0])))+1).padStart(3,'0')}`;
+ async function imported(e:React.ChangeEvent<HTMLInputElement>){const file=e.target.files?.[0];if(!file)return;try{const rows=await parseImport(file);if(!rows.length)return alert('النموذج ما فيه جمعيات صالحة');await saveOrganizationsBulk(rows,user!.name);await reload();alert(`تم استيراد ${rows.length} جمعية`)}catch(ex){alert(errText(ex))}e.target.value=''}
+ return <main className="appShell"><header><button className="mobileMenu" onClick={()=>setMenu(!menu)}><Menu/></button><img src="/manzor-vault-icon.png"/><div><h1>منظور Vault</h1><p>ادارة الجمعيات ومسارات التقديم</p></div><strong>{user.name}</strong><button className="logout" onClick={()=>setUser(null)}><LogOut/></button></header><div className="shell"><aside className={menu?'open':''}><div className="sideActions"><button onClick={()=>{setSelected(emptyOrg(nextId()));setMode('entry');setMenu(false)}}><Plus/> اضافة جمعية</button><button className="secondary" onClick={makeTemplate}><Download/> تحميل نموذج Excel</button><label className="secondary"><Upload/> رفع الجمعيات<input hidden type="file" accept=".xls,.xml" onChange={imported}/></label></div><div className="search"><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث عن جمعية"/></div><nav>{filtered.map(o=><button className={selected?.id===o.id?'active':''} key={o.id} onClick={()=>{setSelected(o);setMode('view');setMenu(false)}}><span>{o.id}</span><strong>{o.name}</strong></button>)}</nav></aside><section className="workspace">{error&&<div className="errorBanner">{error}</div>}{mode==='list'&&<div className="welcome"><ImageIcon/><h2>اختاري جمعية من القائمة</h2><p>او اضيفي جمعية جديدة وادخلي بياناتها كاملة من صفحة وحدة</p></div>}{selected&&mode==='view'&&<OrganizationView org={selected} accounts={accounts} sites={sites} files={files} user={user} onEdit={()=>setMode('entry')} onBack={()=>{setMode('list');setSelected(null)}} onRefresh={refreshDetails} onDeleted={async()=>{await reload();setSelected(null);setMode('list')}}/>}{selected&&mode==='entry'&&<EntryPage initial={selected} currentUser={user} onCancel={()=>setMode(selected.name?'view':'list')} onDone={async o=>{await reload();setSelected(o);setMode('view')}}/>}</section></div><footer className="siteFooter">جميع الحقوق محفوظة لمنظور التقني © 2026</footer></main>}
+createRoot(document.getElementById('root')!).render(<App/>);

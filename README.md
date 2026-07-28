@@ -1,39 +1,29 @@
-# Manzor Vault
+# Manzor Tech Vault
 
-واجهة داخلية لإدارة بيانات الجمعيات والحسابات والملفات وخطط المستخدمين.
+نسخة Vault مرتبطة بمشروع Supabase المشترك الخاص بـ Mail Sender، مع فصل كامل لبيانات Vault داخل PostgreSQL schema باسم `manzor_vault` وBucket باسم `vault-files`.
 
-## التشغيل المحلي
+## الإعداد مرة واحدة
 
-```bash
-npm install --legacy-peer-deps --no-audit --no-fund
-npm run dev
+1. افتحي مشروع Mail Sender في Supabase.
+2. افتحي SQL Editor.
+3. شغلي الملف:
+   `supabase/vault_schema_for_mail_sender.sql`
+4. من إعدادات API أضيفي `manzor_vault` إلى **Exposed schemas** ثم احفظي.
+5. ارفعي المشروع إلى Git/Vercel.
+
+## متغيرات Vercel
+
+```env
+VITE_SUPABASE_URL=https://udasfetzhftousewwtwp.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_qKBo6Nd1Her3KWFCUBPUJw_CniAY8c5
 ```
 
-## النشر على Vercel
+## فصل البيانات
 
-الإعدادات جاهزة داخل `vercel.json`:
+- جداول Vault: `manzor_vault.*`
+- ملفات Vault: Storage bucket `vault-files`
+- جداول Mail Sender في `public` أو أي schema أخرى لا يتم تعديلها.
 
-- Install Command: `npm install --legacy-peer-deps --no-audit --no-fund`
-- Build Command: `npm run build`
-- Output Directory: `dist`
-- Framework: Vite
+## تنبيه
 
-## Supabase
-
-الربط جاهز داخل `src/lib/supabase.ts` ومعه ملف `.env.production`.
-
-الجداول المطلوبة موجودة في:
-
-```text
-supabase/schema.sql
-```
-
-## الدخول
-
-يدعم 10 أرقام ID:
-
-```text
-1001 إلى 1010
-```
-
-كل مستخدم له بروفايل مستقل للإنجاز اليومي والخطة الأسبوعية مع تصدير Excel وحذف البيانات.
+لا تشغلي ملفات `schema.sql` القديمة على مشروع Mail Sender. الملف المخصص والآمن لهذه النسخة هو `vault_schema_for_mail_sender.sql` فقط.

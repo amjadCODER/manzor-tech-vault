@@ -1,12 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const fallbackUrl = 'https://htevlpsnqislrhwhlhsp.supabase.co';
-const fallbackAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0ZXZscHNucWlzbHJod2hsaHNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzNDExMzMsImV4cCI6MjA5ODkxNzEzM30.8dCRs4mc-KuOYl6-mLzRXBDpIFXGjvgijqlfzpJfDlA';
+const fallbackUrl = 'https://udasfetzhftousewwtwp.supabase.co';
+const fallbackAnonKey = 'sb_publishable_qKBo6Nd1Her3KWFCUBPUJw_CniAY8c5';
 
 const url = import.meta.env.VITE_SUPABASE_URL || fallbackUrl;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || fallbackAnonKey;
 
+/**
+ * Vault uses a dedicated PostgreSQL schema inside the shared Mail Sender
+ * Supabase project. Storage remains project-wide and uses the vault-files bucket.
+ */
 export const supabase = createClient(url, anonKey, {
+  db: { schema: 'manzor_vault' },
   auth: {
     persistSession: false,
     autoRefreshToken: false,
